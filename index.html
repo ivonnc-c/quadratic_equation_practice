@@ -92,7 +92,6 @@
 
         // --- Utility Functions ---
         
-        // Robust GCD: Handles negative numbers and ensures integer inputs to prevent float errors
         const gcd = (a, b) => {
             a = Math.round(Math.abs(a));
             b = Math.round(Math.abs(b));
@@ -108,7 +107,6 @@
         };
 
         const simplifyFrac = (num, den) => {
-            // Ensure inputs are rounded to avoid float issues like -2.000000001
             num = Math.round(num);
             den = Math.round(den);
 
@@ -127,7 +125,6 @@
             return `${str} = 0`;
         };
 
-        // Enhanced Roots Display with Simplification
         const buildRootsString = (type, data) => {
             if (type === "no_solution") return "\\text{無實數解}";
             
@@ -142,7 +139,6 @@
             if (type === "irrational") {
                 const { negB, surdCoef, surdInner, den } = data;
                 
-                // Double check: if surdInner is perfect square (e.g. 1), simplify to rational
                 if (surdInner === 1) {
                     let n1 = negB + surdCoef;
                     let n2 = negB - surdCoef;
@@ -154,7 +150,6 @@
                     return `x = ${r1}, ${r2}`;
                 }
 
-                // Global simplification of the fraction terms for irrational
                 const common = gcd(Math.abs(negB), gcd(Math.abs(surdCoef), Math.abs(den)));
                 const sB = negB / common;
                 const sCoef = surdCoef / common;
@@ -163,11 +158,9 @@
                 let sqrtPart = (sCoef === 1) ? `\\sqrt{${surdInner}}` : `${sCoef}\\sqrt{${surdInner}}`;
                 
                 if (sDen === 1) {
-                    // Integer denominator: x = -b ± √D
                     if (sB === 0) return `x = \\pm ${sqrtPart}`;
                     return `x = ${sB} \\pm ${sqrtPart}`;
                 } else {
-                    // Fraction denominator: x = (-b ± √D) / 2a
                     let numStr = (sB === 0) ? `\\pm ${sqrtPart}` : `${sB} \\pm ${sqrtPart}`;
                     return `x = \\frac{${numStr}}{${sDen}}`;
                 }
@@ -179,21 +172,78 @@
         const generateFactorProblem = (subTypes) => {
             const type = subTypes[randInt(0, subTypes.length - 1)];
             let a, b, c, qStr, ansData;
+
+            // Helper to format fraction coeff equation: (A/k)x^2 + (B/k)x + (C/k) = 0
+            const formatFractionEq = (A, B, C, k) => {
+                const formatTerm = (coeff, isFirst = false) => {
+                    if (coeff === 0) return "";
+                    
+                    let sign = "";
+                    if (coeff < 0) sign = "-";
+                    else if (!isFirst) sign = "+";
+                    
+                    let absCoeff = Math.abs(coeff);
+                    let f = simplifyFrac(absCoeff, k);
+                    
+                    let valStr = "";
+                    if (f.d === 1) {
+                         if (f.n !== 1) valStr = `${f.n}`; // e.g., 2
+                         // if 1, usually omitted before x, but kept if constant
+                    } else {
+                        valStr = `\\frac{${f.n}}{${f.d}}`;
+                    }
+                    
+                    return { sign, valStr, isOne: (f.n === 1 && f.d === 1) };
+                };
+
+                let t1 = formatTerm(A, true);
+                let t2 = formatTerm(B, false);
+                let t3 = formatTerm(C, false);
+
+                let s = "";
+                // x^2 term
+                s += t1.sign + (t1.valStr === "" && t1.isOne ? "" : t1.valStr) + "x^2";
+                
+                // x term
+                if (B !== 0) {
+                     s += t2.sign + (t2.valStr === "" && t2.isOne ? "" : t2.valStr) + "x";
+                }
+                
+                // constant
+                if (C !== 0) {
+                    // For constant, we always need the value even if it's 1
+                    let cStr = t3.valStr === "" ? "1" : t3.valStr;
+                    s += t3.sign + cStr;
+                }
+                
+                return s + " = 0";
+            };
+
+            // 1. Common Factor
             if (type === 'common') {
                 let r = randNonZero(-9, 9); let k = randNonZero(1, 5);
                 a = k; b = -k * r; c = 0;
                 ansData = { type: 'rational', v1n: 0, v1d: 1, v2n: r, v2d: 1, isEqual: false };
-            } else if (type === 'diff_sq') {
+                qStr = formatQuadratic(a, b, c);
+            } 
+            // 2. Difference of Squares
+            else if (type === 'diff_sq') {
                 let m = randNonZero(1, 5); let n = randNonZero(1, 9);
                 let comm = gcd(m*m, n*n); a = (m*m)/comm; b = 0; c = -(n*n)/comm;
                 let f = simplifyFrac(n, m);
                 ansData = { type: 'rational', v1n: f.n, v1d: f.d, v2n: -f.n, v2d: f.d, isEqual: false };
-            } else if (type === 'perfect') {
+                qStr = formatQuadratic(a, b, c);
+            } 
+            // 3. Perfect Square
+            else if (type === 'perfect') {
                 let m = randInt(1, 3); let n = randNonZero(-9, 9);
                 a = m*m; b = 2*m*n; c = n*n;
                 let f = simplifyFrac(-n, m);
                 ansData = { type: 'rational', v1n: f.n, v1d: f.d, v2n: f.n, v2d: f.d, isEqual: true };
-            } else { 
+                qStr = formatQuadratic(a, b, c);
+            } 
+            // 4. Standard Cross
+            else if (type === 'standard') {
                 let m = randInt(1, 3); let n = randInt(1, 4);
                 let p = randNonZero(-9, 9); let q = randNonZero(-9, 9);
                 a = m*n; b = m*q + n*p; c = p*q; if (c === 0) c = 1;
@@ -202,8 +252,61 @@
                 let f1 = simplifyFrac(-p, m); let f2 = simplifyFrac(-q, n);
                 let isEqual = (f1.n === f2.n && f1.d === f2.d);
                 ansData = { type: 'rational', v1n: f1.n, v1d: f1.d, v2n: f2.n, v2d: f2.d, isEqual };
+                qStr = formatQuadratic(a, b, c);
             }
-            qStr = formatQuadratic(a, b, c);
+            // 5. Expand & Arrange (New)
+            else if (type === 'expand') {
+                // Goal: (x+m)(x+n) = k
+                // 1. Decide target roots r1, r2 (integers)
+                let r1 = randNonZero(-8, 8);
+                let r2 = randNonZero(-8, 8);
+                // Target: x^2 - (r1+r2)x + r1r2 = 0
+                let S = r1 + r2; // Sum
+                let P = r1 * r2; // Prod
+                
+                // We want form (x+m)(x+n) = k
+                // Expand: x^2 + (m+n)x + mn = k
+                // Compare: m+n = -S, mn - k = P
+                
+                // 2. Pick random m
+                let m = randInt(-9, 9);
+                // 3. Solve for n
+                let n = -S - m;
+                // 4. Solve for k
+                let k = m * n - P;
+
+                // If k=0, it's just standard factoring, force k!=0
+                while (k === 0) {
+                    m = randInt(-9, 9);
+                    n = -S - m;
+                    k = m * n - P;
+                }
+
+                // Construct problem string
+                let part1 = m === 0 ? "x" : `(x ${m > 0 ? "+" : ""} ${m})`;
+                let part2 = n === 0 ? "x" : `(x ${n > 0 ? "+" : ""} ${n})`;
+                qStr = `${part1}${part2} = ${k}`;
+
+                // Answers are r1, r2
+                ansData = { type: 'rational', v1n: r1, v1d: 1, v2n: r2, v2d: 1, isEqual: r1 === r2 };
+            }
+            // 6. Fractional Coeffs (New)
+            else if (type === 'fraction') {
+                // Start with standard integer problem
+                let m = randInt(1, 2); let n = randInt(1, 3);
+                let p = randNonZero(-6, 6); let q = randNonZero(-6, 6);
+                a = m*n; b = m*q + n*p; c = p*q;
+                
+                // Pick a denominator k
+                let k = [2, 3, 4, 5][randInt(0, 3)];
+                
+                qStr = formatFractionEq(a, b, c, k);
+                
+                let f1 = simplifyFrac(-p, m); let f2 = simplifyFrac(-q, n);
+                let isEqual = (f1.n === f2.n && f1.d === f2.d);
+                ansData = { type: 'rational', v1n: f1.n, v1d: f1.d, v2n: f2.n, v2d: f2.d, isEqual };
+            }
+            
             return { q: qStr, a: buildRootsString(ansData.type, ansData), method: '因式分解' };
         };
 
@@ -309,8 +412,12 @@
             const [viewMode, setViewMode] = useState('list'); // 'list' or 'tv'
             
             const [subTypes, setSubTypes] = useState({
+                // Factor
                 factor_common: true, factor_diff: true, factor_perfect: true, factor_cross: true,
+                factor_expand: false, factor_fraction: false, // New types
+                // Square
                 sq_basic: true, sq_coeff: false, sq_gen_1: true, sq_gen_a: false,
+                // Formula
                 form_distinct: true, form_equal: false, form_none: false
             });
 
@@ -318,8 +425,12 @@
                 const activeGens = [];
                 if(mode==='factor' || mode==='mixed'){
                     let t=[];
-                    if(subTypes.factor_common) t.push('common'); if(subTypes.factor_diff) t.push('diff_sq');
-                    if(subTypes.factor_perfect) t.push('perfect'); if(subTypes.factor_cross) t.push('standard');
+                    if(subTypes.factor_common) t.push('common'); 
+                    if(subTypes.factor_diff) t.push('diff_sq');
+                    if(subTypes.factor_perfect) t.push('perfect'); 
+                    if(subTypes.factor_cross) t.push('standard');
+                    if(subTypes.factor_expand) t.push('expand'); // New
+                    if(subTypes.factor_fraction) t.push('fraction'); // New
                     if(t.length) activeGens.push(() => generateFactorProblem(t));
                 }
                 if(mode==='square' || mode==='mixed'){
@@ -376,6 +487,8 @@
                                     <label className="flex items-center gap-1 bg-blue-50 px-2 py-1 rounded cursor-pointer select-none"><input type="checkbox" checked={subTypes.factor_diff} onChange={()=>toggleSubType('factor_diff')}/>平方差</label>
                                     <label className="flex items-center gap-1 bg-blue-50 px-2 py-1 rounded cursor-pointer select-none"><input type="checkbox" checked={subTypes.factor_perfect} onChange={()=>toggleSubType('factor_perfect')}/>完全平方</label>
                                     <label className="flex items-center gap-1 bg-blue-50 px-2 py-1 rounded cursor-pointer select-none"><input type="checkbox" checked={subTypes.factor_cross} onChange={()=>toggleSubType('factor_cross')}/>十字交乘</label>
+                                    <label className="flex items-center gap-1 bg-purple-50 px-2 py-1 rounded cursor-pointer select-none ring-1 ring-purple-200"><input type="checkbox" checked={subTypes.factor_expand} onChange={()=>toggleSubType('factor_expand')}/>先展開整理</label>
+                                    <label className="flex items-center gap-1 bg-purple-50 px-2 py-1 rounded cursor-pointer select-none ring-1 ring-purple-200"><input type="checkbox" checked={subTypes.factor_fraction} onChange={()=>toggleSubType('factor_fraction')}/>係數為分數</label>
                                 </>}
                                 {(mode==='square'||mode==='mixed') && <>
                                     <label className="flex items-center gap-1 bg-green-50 px-2 py-1 rounded cursor-pointer select-none">
@@ -455,7 +568,7 @@
                                 {problems.map((p, idx) => (
                                     <div key={p.id} className={`relative rounded-xl border-l-8 transition-all ${
                                         viewMode === 'tv' 
-                                        ? 'bg-gray-800 border-yellow-500 px-2 py-0.5 shadow-xl' // Reduced vertical padding
+                                        ? 'bg-gray-800 border-yellow-500 px-4 py-0.5 shadow-xl' // Reduced vertical padding
                                         : 'bg-white border-blue-500 p-4 shadow-sm'
                                     }`}>
                                         <div className="flex justify-between items-start">
