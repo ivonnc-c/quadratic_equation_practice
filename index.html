@@ -568,7 +568,7 @@
                                 {problems.map((p, idx) => (
                                     <div key={p.id} className={`relative rounded-xl border-l-8 transition-all ${
                                         viewMode === 'tv' 
-                                        ? 'bg-gray-800 border-yellow-500 px-4 py-0.5 shadow-xl' // Reduced vertical padding
+                                        ? 'bg-gray-800 border-yellow-500 px-3 py-0.5 shadow-xl' // Reduced vertical padding
                                         : 'bg-white border-blue-500 p-4 shadow-sm'
                                     }`}>
                                         <div className="flex justify-between items-start">
@@ -589,7 +589,7 @@
                                         {/* Answer Area - Collapsible in TV Mode */}
                                         {(!showAnswers && viewMode === 'tv') ? null : (
                                             <div className={`mt-2 pt-2 border-t flex items-center justify-center
-                                                ${viewMode === 'tv' ? 'border-gray-700 min-h-[2rem]' : 'border-gray-100 min-h-[3rem] mt-4 pt-3'}
+                                                ${viewMode === 'tv' ? 'border-gray-700 min-h-[1.5rem]' : 'border-gray-100 min-h-[3rem] mt-4 pt-3'}
                                             `}>
                                                 {showAnswers ? (
                                                     <div className={`animate-bounce-in font-bold ${viewMode==='tv'?'text-yellow-400':'text-red-600'}`}>
