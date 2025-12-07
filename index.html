@@ -1,0 +1,511 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>一元二次方程式自動出題系統</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- React and ReactDOM -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <!-- Babel -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <!-- MathJax -->
+    <script>
+        window.MathJax = {
+            tex: {
+                inlineMath: [['$', '$'], ['\\(', '\\)']],
+                displayMath: [['$$', '$$'], ['\\[', '\\]']],
+                packages: {'[+]': ['noerrors', 'noundefined']}
+            },
+            svg: {
+                fontCache: 'global'
+            },
+            startup: {
+                typeset: false 
+            }
+        };
+    </script>
+    <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+    
+    <style>
+        body { font-family: 'Noto Sans TC', sans-serif; background-color: #f3f4f6; }
+        .math-display { overflow-x: auto; padding: 0.2rem 0; }
+        .math-display::-webkit-scrollbar { height: 4px; }
+        .math-display::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 2px; }
+        
+        /* Inline math alignment adjustment */
+        .inline-math-wrapper mjx-container {
+            margin: 0 !important;
+            vertical-align: middle !important;
+        }
+
+        /* Print Styles */
+        @media print {
+            .no-print { display: none !important; }
+            .page-break { page-break-inside: avoid; }
+        }
+        
+        /* Custom animation for collapse */
+        .collapse-content {
+            transition: max-height 0.3s ease-out, opacity 0.3s ease-out;
+            max-height: 200px;
+            opacity: 1;
+            overflow: hidden;
+        }
+        .collapse-content.collapsed {
+            max-height: 0;
+            opacity: 0;
+            margin: 0 !important;
+            padding: 0 !important;
+            border: none !important;
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef, useCallback } = React;
+
+        // --- Math Rendering Component ---
+        const MathDisplay = ({ latex, className = "text-xl text-gray-900", inline = false }) => {
+            const node = useRef(null);
+            
+            useEffect(() => {
+                if (window.MathJax && window.MathJax.typesetPromise && node.current) {
+                    node.current.innerHTML = '';
+                    const math = document.createElement('span');
+                    math.innerHTML = inline ? `\\( ${latex} \\)` : `$$ ${latex} $$`; 
+                    node.current.appendChild(math);
+                    window.MathJax.typesetPromise([node.current]).catch((err) => console.log(err));
+                }
+            }, [latex, inline]);
+
+            if (inline) {
+                return <span ref={node} className="inline-math-wrapper inline-block mx-1 text-gray-900 font-serif"></span>;
+            }
+
+            return <div ref={node} className={`math-display font-serif ${className}`}></div>;
+        };
+
+        // --- Utility Functions ---
+        
+        // Robust GCD: Handles negative numbers and ensures integer inputs to prevent float errors
+        const gcd = (a, b) => {
+            a = Math.round(Math.abs(a));
+            b = Math.round(Math.abs(b));
+            return b === 0 ? a : gcd(b, a % b);
+        };
+
+        const randInt = (min, max) => Math.floor(Math.random() * (max - min + 1)) + min;
+        
+        const randNonZero = (min, max) => {
+            let res = 0;
+            while (res === 0) res = randInt(min, max);
+            return res;
+        };
+
+        const simplifyFrac = (num, den) => {
+            // Ensure inputs are rounded to avoid float issues like -2.000000001
+            num = Math.round(num);
+            den = Math.round(den);
+
+            if (den === 0) return { n: 0, d: 1 };
+            if (den < 0) { num = -num; den = -den; }
+            const common = gcd(num, den);
+            return { n: num / common, d: den / common };
+        };
+
+        const formatQuadratic = (a, b, c) => {
+            let str = "";
+            if (a === 1) str += "x^2"; else if (a === -1) str += "-x^2"; else str += `${a}x^2`;
+            if (b > 0) str += (str ? "+" : "") + (b === 1 ? "x" : `${b}x`); else if (b < 0) str += (b === -1 ? "-x" : `${b}x`);
+            if (c > 0) str += `+${c}`; else if (c < 0) str += `${c}`;
+            if (!str) str = "0"; 
+            return `${str} = 0`;
+        };
+
+        // Enhanced Roots Display with Simplification
+        const buildRootsString = (type, data) => {
+            if (type === "no_solution") return "\\text{無實數解}";
+            
+            if (type === "rational") {
+                const { v1n, v1d, v2n, v2d, isEqual } = data;
+                let r1 = (v1d === 1) ? `${v1n}` : `\\frac{${v1n}}{${v1d}}`;
+                if (isEqual) return `x = ${r1} \\quad (\\text{重根})`;
+                let r2 = (v2d === 1) ? `${v2n}` : `\\frac{${v2n}}{${v2d}}`;
+                return `x = ${r1}, ${r2}`;
+            }
+            
+            if (type === "irrational") {
+                const { negB, surdCoef, surdInner, den } = data;
+                
+                // Double check: if surdInner is perfect square (e.g. 1), simplify to rational
+                if (surdInner === 1) {
+                    let n1 = negB + surdCoef;
+                    let n2 = negB - surdCoef;
+                    let f1 = simplifyFrac(n1, den);
+                    let f2 = simplifyFrac(n2, den);
+                    let r1 = (f1.d === 1) ? `${f1.n}` : `\\frac{${f1.n}}{${f1.d}}`;
+                    let r2 = (f2.d === 1) ? `${f2.n}` : `\\frac{${f2.n}}{${f2.d}}`;
+                    if (n1 === n2) return `x = ${r1} \\quad (\\text{重根})`;
+                    return `x = ${r1}, ${r2}`;
+                }
+
+                // Global simplification of the fraction terms for irrational
+                const common = gcd(Math.abs(negB), gcd(Math.abs(surdCoef), Math.abs(den)));
+                const sB = negB / common;
+                const sCoef = surdCoef / common;
+                const sDen = den / common;
+                
+                let sqrtPart = (sCoef === 1) ? `\\sqrt{${surdInner}}` : `${sCoef}\\sqrt{${surdInner}}`;
+                
+                if (sDen === 1) {
+                    // Integer denominator: x = -b ± √D
+                    if (sB === 0) return `x = \\pm ${sqrtPart}`;
+                    return `x = ${sB} \\pm ${sqrtPart}`;
+                } else {
+                    // Fraction denominator: x = (-b ± √D) / 2a
+                    let numStr = (sB === 0) ? `\\pm ${sqrtPart}` : `${sB} \\pm ${sqrtPart}`;
+                    return `x = \\frac{${numStr}}{${sDen}}`;
+                }
+            }
+            return "";
+        };
+
+        // --- Generators ---
+        const generateFactorProblem = (subTypes) => {
+            const type = subTypes[randInt(0, subTypes.length - 1)];
+            let a, b, c, qStr, ansData;
+            if (type === 'common') {
+                let r = randNonZero(-9, 9); let k = randNonZero(1, 5);
+                a = k; b = -k * r; c = 0;
+                ansData = { type: 'rational', v1n: 0, v1d: 1, v2n: r, v2d: 1, isEqual: false };
+            } else if (type === 'diff_sq') {
+                let m = randNonZero(1, 5); let n = randNonZero(1, 9);
+                let comm = gcd(m*m, n*n); a = (m*m)/comm; b = 0; c = -(n*n)/comm;
+                let f = simplifyFrac(n, m);
+                ansData = { type: 'rational', v1n: f.n, v1d: f.d, v2n: -f.n, v2d: f.d, isEqual: false };
+            } else if (type === 'perfect') {
+                let m = randInt(1, 3); let n = randNonZero(-9, 9);
+                a = m*m; b = 2*m*n; c = n*n;
+                let f = simplifyFrac(-n, m);
+                ansData = { type: 'rational', v1n: f.n, v1d: f.d, v2n: f.n, v2d: f.d, isEqual: true };
+            } else { 
+                let m = randInt(1, 3); let n = randInt(1, 4);
+                let p = randNonZero(-9, 9); let q = randNonZero(-9, 9);
+                a = m*n; b = m*q + n*p; c = p*q; if (c === 0) c = 1;
+                let comm = gcd(Math.abs(a), gcd(Math.abs(b), Math.abs(c))); 
+                a/=comm; b/=comm; c/=comm;
+                let f1 = simplifyFrac(-p, m); let f2 = simplifyFrac(-q, n);
+                let isEqual = (f1.n === f2.n && f1.d === f2.d);
+                ansData = { type: 'rational', v1n: f1.n, v1d: f1.d, v2n: f2.n, v2d: f2.d, isEqual };
+            }
+            qStr = formatQuadratic(a, b, c);
+            return { q: qStr, a: buildRootsString(ansData.type, ansData), method: '因式分解' };
+        };
+
+        const generateSquareProblem = (subTypes) => {
+            const type = subTypes[randInt(0, subTypes.length - 1)];
+            let qStr, ansStr;
+            const getSurd = (val) => {
+                let c = 1, i = val;
+                for(let j=2; j*j<=i; j++){ while(i % (j*j) === 0) { c*=j; i/=(j*j); } }
+                return { c, i };
+            };
+            if (type === 'sq_basic') { 
+                let h = randNonZero(-9, 9); let k = randInt(2, 25);
+                if (Math.random() > 0.5) k = randInt(2, 6) ** 2;
+                let sign = h > 0 ? "+" : ""; qStr = `(x ${sign} ${h})^2 = ${k}`;
+                let sqrtK = Math.sqrt(k);
+                if (Number.isInteger(sqrtK)) {
+                    ansStr = buildRootsString('rational', { v1n: -h + sqrtK, v1d: 1, v2n: -h - sqrtK, v2d: 1, isEqual: false });
+                } else {
+                    let s = getSurd(k);
+                    ansStr = buildRootsString('irrational', { negB: -h, surdCoef: s.c, surdInner: s.i, den: 1 });
+                }
+            } else if (type === 'sq_coeff') { 
+                let a = randInt(2, 5); let h = randNonZero(-5, 5);
+                let k = randInt(1, 10) * a; if (Math.random() > 0.7) k += 1;
+                let sign = h > 0 ? "+" : ""; qStr = `${a}(x ${sign} ${h})^2 = ${k}`;
+                let f = simplifyFrac(k, a);
+                let product = f.n * f.d;
+                let s = getSurd(product);
+                if (s.i === 1) {
+                     let numTerm1 = -h * f.d + s.c;
+                     let numTerm2 = -h * f.d - s.c;
+                     let term1 = simplifyFrac(numTerm1, f.d);
+                     let term2 = simplifyFrac(numTerm2, f.d);
+                     ansStr = buildRootsString('rational', { v1n: term1.n, v1d: term1.d, v2n: term2.n, v2d: term2.d, isEqual: false });
+                } else {
+                    ansStr = buildRootsString('irrational', { negB: -h * f.d, surdCoef: s.c, surdInner: s.i, den: f.d });
+                }
+            } else if (type === 'sq_gen_1') {
+                let h = randNonZero(-6, 6); let k = randInt(2, 20);
+                let b = 2 * h; let c = h*h - k;
+                qStr = formatQuadratic(1, b, c);
+                let s = getSurd(k);
+                if (s.i === 1) ansStr = buildRootsString('rational', { v1n: -h + s.c, v1d: 1, v2n: -h - s.c, v2d: 1, isEqual: false });
+                else ansStr = buildRootsString('irrational', { negB: -h, surdCoef: s.c, surdInner: s.i, den: 1 });
+            } else {
+                let aVal = randInt(2, 3); let h = randNonZero(-3, 3); let k = randInt(1, 15);
+                let bVal = 2 * aVal * h; let cVal = aVal * h * h - k;
+                qStr = formatQuadratic(aVal, bVal, cVal);
+                let bigD = aVal * k; 
+                let s = getSurd(bigD);
+                if (s.i === 1) {
+                    let numTerm1 = (-aVal*h) + s.c;
+                    let numTerm2 = (-aVal*h) - s.c;
+                    let t1 = simplifyFrac(numTerm1, aVal);
+                    let t2 = simplifyFrac(numTerm2, aVal);
+                    ansStr = buildRootsString('rational', { v1n: t1.n, v1d: t1.d, v2n: t2.n, v2d: t2.d, isEqual: false });
+                }
+                else ansStr = buildRootsString('irrational', { negB: -aVal*h, surdCoef: s.c, surdInner: s.i, den: aVal });
+            }
+            return { q: qStr, a: ansStr, method: '配方法' };
+        };
+
+        const generateFormulaProblem = (subTypes) => {
+            const type = subTypes[randInt(0, subTypes.length - 1)];
+            let a, b, c;
+            if (type === 'none') {
+                a = randInt(1, 4); c = randInt(4, 10); b = randInt(-3, 3);
+            } else if (type === 'equal') {
+                let m = randInt(1, 3); let n = randNonZero(-4, 4); a = m*m; b = 2*m*n; c = n*n;
+            } else {
+                a = randInt(1, 4); b = randNonZero(-9, 9); c = randNonZero(-9, 9);
+                while ((b*b - 4*a*c) < 0) { c = randInt(-9, -1); if (c===0) c=1; }
+            }
+            let qStr = formatQuadratic(a, b, c); let D = b*b - 4*a*c; let ansStr = "";
+            if (D < 0) ansStr = buildRootsString('no_solution', {});
+            else if (D === 0) {
+                let f = simplifyFrac(-b, 2*a);
+                ansStr = buildRootsString('rational', { v1n: f.n, v1d: f.d, v2n: f.n, v2d: f.d, isEqual: true });
+            } else {
+                let sqrtD = Math.sqrt(D);
+                let sqrtInt = Math.round(sqrtD);
+                let isPerfectSq = (sqrtInt * sqrtInt === D);
+
+                if (isPerfectSq) {
+                    let num1 = -b + sqrtInt; let num2 = -b - sqrtInt; let den = 2*a;
+                    let f1 = simplifyFrac(num1, den); let f2 = simplifyFrac(num2, den);
+                    ansStr = buildRootsString('rational', { v1n: f1.n, v1d: f1.d, v2n: f2.n, v2d: f2.d, isEqual: false });
+                } else {
+                    let surdCoef = 1; let inner = D;
+                    for(let i=2; i*i<=inner; i++){ while(inner % (i*i) === 0) { surdCoef*=i; inner/=(i*i); } }
+                    ansStr = buildRootsString('irrational', { negB: -b, surdCoef: surdCoef, surdInner: inner, den: 2*a });
+                }
+            }
+            return { q: qStr, a: ansStr, method: '公式解' };
+        };
+
+        const App = () => {
+            const [mode, setMode] = useState('factor');
+            const [problems, setProblems] = useState([]);
+            const [numQuestions, setNumQuestions] = useState(6);
+            const [showAnswers, setShowAnswers] = useState(false);
+            const [viewMode, setViewMode] = useState('list'); // 'list' or 'tv'
+            
+            const [subTypes, setSubTypes] = useState({
+                factor_common: true, factor_diff: true, factor_perfect: true, factor_cross: true,
+                sq_basic: true, sq_coeff: false, sq_gen_1: true, sq_gen_a: false,
+                form_distinct: true, form_equal: false, form_none: false
+            });
+
+            const generate = () => {
+                const activeGens = [];
+                if(mode==='factor' || mode==='mixed'){
+                    let t=[];
+                    if(subTypes.factor_common) t.push('common'); if(subTypes.factor_diff) t.push('diff_sq');
+                    if(subTypes.factor_perfect) t.push('perfect'); if(subTypes.factor_cross) t.push('standard');
+                    if(t.length) activeGens.push(() => generateFactorProblem(t));
+                }
+                if(mode==='square' || mode==='mixed'){
+                    let t=[];
+                    if(subTypes.sq_basic) t.push('sq_basic'); if(subTypes.sq_coeff) t.push('sq_coeff');
+                    if(subTypes.sq_gen_1) t.push('sq_gen_1'); if(subTypes.sq_gen_a) t.push('sq_gen_a');
+                    if(t.length) activeGens.push(() => generateSquareProblem(t));
+                }
+                if(mode==='formula' || mode==='mixed'){
+                    let t=[];
+                    if(subTypes.form_distinct) t.push('distinct'); if(subTypes.form_equal) t.push('equal');
+                    if(subTypes.form_none) t.push('none');
+                    if(t.length) activeGens.push(() => generateFormulaProblem(t));
+                }
+                if(activeGens.length === 0) { alert("請至少選擇一種題型！"); return; }
+                const newP = [];
+                for(let i=0; i<numQuestions; i++){
+                    const gen = activeGens[randInt(0, activeGens.length - 1)];
+                    newP.push({ id: Date.now()+i, ...gen() });
+                }
+                setProblems(newP);
+                setShowAnswers(false);
+            };
+
+            const toggleSubType = (k) => setSubTypes(p => ({...p, [k]: !p[k]}));
+
+            return (
+                <div className={`min-h-screen ${viewMode === 'tv' ? 'bg-gray-900 p-2' : 'p-4 md:p-8 bg-gray-50'}`}>
+                    
+                    {/* Header (Only show in List Mode) */}
+                    {viewMode !== 'tv' && (
+                        <div className="max-w-5xl mx-auto mb-4">
+                            <header className="mb-6 text-center">
+                                <h1 className="text-3xl font-bold text-gray-800 mb-2">一元二次方程式 練習生成器</h1>
+                                <div className="flex justify-center gap-2">
+                                    {['factor','square','formula','mixed'].map(m => (
+                                        <button key={m} onClick={()=>setMode(m)} 
+                                            className={`px-4 py-1 rounded-full text-sm font-bold ${mode===m ? 'bg-blue-600 text-white' : 'bg-white border'}`}>
+                                            {m==='factor'?'因式分解': m==='square'?'配方法': m==='formula'?'公式解':'混合'}
+                                        </button>
+                                    ))}
+                                </div>
+                            </header>
+                        </div>
+                    )}
+
+                    {/* Settings Panel (Only in List Mode) */}
+                    {viewMode === 'list' && (
+                        <div className="max-w-5xl mx-auto bg-white p-5 rounded-xl shadow-sm mb-6 border border-gray-200">
+                            <h3 className="font-bold text-gray-700 mb-2 border-b pb-1">細項設定</h3>
+                            <div className="flex flex-wrap gap-3">
+                                {(mode==='factor'||mode==='mixed') && <>
+                                    <label className="flex items-center gap-1 bg-blue-50 px-2 py-1 rounded cursor-pointer select-none"><input type="checkbox" checked={subTypes.factor_common} onChange={()=>toggleSubType('factor_common')}/>提公因式</label>
+                                    <label className="flex items-center gap-1 bg-blue-50 px-2 py-1 rounded cursor-pointer select-none"><input type="checkbox" checked={subTypes.factor_diff} onChange={()=>toggleSubType('factor_diff')}/>平方差</label>
+                                    <label className="flex items-center gap-1 bg-blue-50 px-2 py-1 rounded cursor-pointer select-none"><input type="checkbox" checked={subTypes.factor_perfect} onChange={()=>toggleSubType('factor_perfect')}/>完全平方</label>
+                                    <label className="flex items-center gap-1 bg-blue-50 px-2 py-1 rounded cursor-pointer select-none"><input type="checkbox" checked={subTypes.factor_cross} onChange={()=>toggleSubType('factor_cross')}/>十字交乘</label>
+                                </>}
+                                {(mode==='square'||mode==='mixed') && <>
+                                    <label className="flex items-center gap-1 bg-green-50 px-2 py-1 rounded cursor-pointer select-none">
+                                        <input type="checkbox" checked={subTypes.sq_basic} onChange={()=>toggleSubType('sq_basic')}/>
+                                        <span>基礎 <MathDisplay latex="(x+h)^2=k" inline /></span>
+                                    </label>
+                                    <label className="flex items-center gap-1 bg-green-50 px-2 py-1 rounded cursor-pointer select-none">
+                                        <input type="checkbox" checked={subTypes.sq_coeff} onChange={()=>toggleSubType('sq_coeff')}/>
+                                        <span>係數 <MathDisplay latex="a(x+h)^2=k" inline /></span>
+                                    </label>
+                                    <label className="flex items-center gap-1 bg-green-50 px-2 py-1 rounded cursor-pointer select-none">
+                                        <input type="checkbox" checked={subTypes.sq_gen_1} onChange={()=>toggleSubType('sq_gen_1')}/>
+                                        <span>一般 (<MathDisplay latex="a=1" inline />)</span>
+                                    </label>
+                                    <label className="flex items-center gap-1 bg-green-50 px-2 py-1 rounded cursor-pointer select-none">
+                                        <input type="checkbox" checked={subTypes.sq_gen_a} onChange={()=>toggleSubType('sq_gen_a')}/>
+                                        <span>進階 (<MathDisplay latex="a \neq 1" inline />)</span>
+                                    </label>
+                                </>}
+                                {(mode==='formula'||mode==='mixed') && <>
+                                    <label className="flex items-center gap-1 bg-orange-50 px-2 py-1 rounded cursor-pointer select-none"><input type="checkbox" checked={subTypes.form_distinct} onChange={()=>toggleSubType('form_distinct')}/>相異實根</label>
+                                    <label className="flex items-center gap-1 bg-orange-50 px-2 py-1 rounded cursor-pointer select-none"><input type="checkbox" checked={subTypes.form_equal} onChange={()=>toggleSubType('form_equal')}/>重根</label>
+                                    <label className="flex items-center gap-1 bg-orange-50 px-2 py-1 rounded cursor-pointer select-none"><input type="checkbox" checked={subTypes.form_none} onChange={()=>toggleSubType('form_none')}/>無解</label>
+                                </>}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Problem Display Area */}
+                    <div className={viewMode === 'tv' ? 'mx-auto max-w-7xl' : 'max-w-5xl mx-auto'}>
+                         {/* Tools Bar - Integrated Controls (Now includes generation tools) */}
+                         <div className={`flex flex-wrap gap-4 justify-between items-center mb-4 ${viewMode==='tv'?'text-white':''}`}>
+                            <div className="flex items-center gap-4">
+                                <h3 className="text-xl font-bold opacity-80 flex items-center gap-3">
+                                    {viewMode === 'tv' ? '投影模式' : '題目列表'}
+                                    {problems.length > 0 && <span className={`text-sm font-normal px-2 py-0.5 rounded ${viewMode==='tv'?'bg-gray-700':'bg-gray-200 text-gray-600'}`}>共 {problems.length} 題</span>}
+                                </h3>
+                                
+                                {/* Edit Mode Generation Controls (Always visible in List Mode) */}
+                                {viewMode === 'list' && (
+                                    <div className="flex items-center gap-2">
+                                        <select value={numQuestions} onChange={(e)=>setNumQuestions(Number(e.target.value))} className="border p-1.5 rounded text-sm text-gray-700">
+                                            <option value="4">4 題</option>
+                                            <option value="6">6 題</option>
+                                            <option value="8">8 題</option>
+                                            <option value="10">10 題</option>
+                                            <option value="12">12 題</option>
+                                            <option value="20">20 題</option>
+                                        </select>
+                                        <button onClick={generate} className="bg-blue-600 text-white font-bold py-1.5 px-3 rounded shadow hover:bg-blue-700 text-sm flex items-center gap-1">
+                                            <span>🎲 生成</span>
+                                        </button>
+                                    </div>
+                                )}
+                            </div>
+                            
+                            <div className="flex gap-2">
+                                <button onClick={()=>setShowAnswers(!showAnswers)} 
+                                    className={`px-4 py-2 rounded font-bold border transition-colors ${showAnswers ? 'bg-red-500 text-white border-red-600' : (viewMode==='tv' ? 'bg-gray-700 text-gray-200 border-gray-600 hover:bg-gray-600' : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50')}`}>
+                                    {showAnswers ? '🙈 隱藏解答' : '👁️ 顯示解答'}
+                                </button>
+                                
+                                <button onClick={()=>setViewMode(viewMode==='list'?'tv':'list')}
+                                    className={`px-4 py-2 rounded font-bold flex items-center gap-2 border ${viewMode==='tv' ? 'bg-purple-600 text-white border-purple-700 hover:bg-purple-500' : 'bg-white text-purple-700 border-purple-200 hover:bg-purple-50'}`}>
+                                    {viewMode==='list' ? '🖥️ 投影模式' : '📝 編輯模式'}
+                                </button>
+                            </div>
+                        </div>
+
+                        {/* Grid / List Layout */}
+                        {problems.length > 0 ? (
+                            <div className={`grid gap-4 ${
+                                viewMode === 'tv' 
+                                ? 'grid-cols-2' // TV Mode: Strictly 2 columns as requested
+                                : 'grid-cols-1' // List Mode: 1 column
+                            }`}>
+                                {problems.map((p, idx) => (
+                                    <div key={p.id} className={`relative rounded-xl border-l-8 transition-all ${
+                                        viewMode === 'tv' 
+                                        ? 'bg-gray-800 border-yellow-500 px-4 py-2 shadow-xl' // Reduced vertical padding
+                                        : 'bg-white border-blue-500 p-4 shadow-sm'
+                                    }`}>
+                                        <div className="flex justify-between items-start">
+                                            <span className={`text-sm font-mono px-2 py-1 rounded inline-block ${viewMode==='tv'?'bg-gray-700 text-gray-300':'bg-gray-100 text-gray-500'}`}>
+                                                Q{idx + 1}
+                                            </span>
+                                            {viewMode !== 'tv' && <span className="text-xs text-gray-400">{p.method}</span>}
+                                        </div>
+
+                                        {/* Question - Size adjusted for TV mode */}
+                                        <div className={`text-center font-serif ${viewMode==='tv'?'my-0':'my-2'}`}>
+                                            <MathDisplay 
+                                                latex={p.q} 
+                                                className={viewMode==='tv' ? 'text-3xl text-white' : 'text-2xl text-gray-900'} 
+                                            />
+                                        </div>
+
+                                        {/* Answer Area - Collapsible in TV Mode */}
+                                        {(!showAnswers && viewMode === 'tv') ? null : (
+                                            <div className={`mt-2 pt-2 border-t flex items-center justify-center
+                                                ${viewMode === 'tv' ? 'border-gray-700 min-h-[2rem]' : 'border-gray-100 min-h-[3rem] mt-4 pt-3'}
+                                            `}>
+                                                {showAnswers ? (
+                                                    <div className={`animate-bounce-in font-bold ${viewMode==='tv'?'text-yellow-400':'text-red-600'}`}>
+                                                        <MathDisplay 
+                                                            latex={p.a} 
+                                                            className={viewMode==='tv' ? 'text-xl text-yellow-400' : 'text-xl text-red-600'} 
+                                                        />
+                                                    </div>
+                                                ) : (
+                                                    <span className="text-gray-400 italic text-sm">...</span>
+                                                )}
+                                            </div>
+                                        )}
+                                    </div>
+                                ))}
+                            </div>
+                        ) : (
+                            /* Empty State - Guides user to generate */
+                            <div className="text-center py-12 border-2 border-dashed border-gray-300 rounded-xl">
+                                <p className="text-gray-500 text-lg">👇 設定好題型後，點擊上方「生成」按鈕開始練習</p>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
