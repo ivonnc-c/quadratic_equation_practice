@@ -31,7 +31,8 @@
     
     <style>
         body { font-family: 'Noto Sans TC', sans-serif; background-color: #f3f4f6; }
-        .math-display { overflow-x: auto; padding: 0.2rem 0; }
+        /* 修正：將數學算式的預設 padding 設為 0 以減少高度 */
+        .math-display { overflow-x: auto; padding: 0; } 
         .math-display::-webkit-scrollbar { height: 4px; }
         .math-display::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 2px; }
         
@@ -53,13 +54,6 @@
             max-height: 200px;
             opacity: 1;
             overflow: hidden;
-        }
-        .collapse-content.collapsed {
-            max-height: 0;
-            opacity: 0;
-            margin: 0 !important;
-            padding: 0 !important;
-            border: none !important;
         }
     </style>
 </head>
@@ -91,7 +85,6 @@
         };
 
         // --- Utility Functions ---
-        
         const gcd = (a, b) => {
             a = Math.round(Math.abs(a));
             b = Math.round(Math.abs(b));
@@ -109,7 +102,6 @@
         const simplifyFrac = (num, den) => {
             num = Math.round(num);
             den = Math.round(den);
-
             if (den === 0) return { n: 0, d: 1 };
             if (den < 0) { num = -num; den = -den; }
             const common = gcd(num, den);
@@ -125,6 +117,7 @@
             return `${str} = 0`;
         };
 
+        // Enhanced Roots Display
         const buildRootsString = (type, data) => {
             if (type === "no_solution") return "\\text{無實數解}";
             
@@ -138,7 +131,6 @@
             
             if (type === "irrational") {
                 const { negB, surdCoef, surdInner, den } = data;
-                
                 if (surdInner === 1) {
                     let n1 = negB + surdCoef;
                     let n2 = negB - surdCoef;
@@ -154,7 +146,6 @@
                 const sB = negB / common;
                 const sCoef = surdCoef / common;
                 const sDen = den / common;
-                
                 let sqrtPart = (sCoef === 1) ? `\\sqrt{${surdInner}}` : `${sCoef}\\sqrt{${surdInner}}`;
                 
                 if (sDen === 1) {
@@ -173,77 +164,53 @@
             const type = subTypes[randInt(0, subTypes.length - 1)];
             let a, b, c, qStr, ansData;
 
-            // Helper to format fraction coeff equation: (A/k)x^2 + (B/k)x + (C/k) = 0
             const formatFractionEq = (A, B, C, k) => {
                 const formatTerm = (coeff, isFirst = false) => {
                     if (coeff === 0) return "";
-                    
                     let sign = "";
                     if (coeff < 0) sign = "-";
                     else if (!isFirst) sign = "+";
-                    
                     let absCoeff = Math.abs(coeff);
                     let f = simplifyFrac(absCoeff, k);
-                    
                     let valStr = "";
                     if (f.d === 1) {
-                         if (f.n !== 1) valStr = `${f.n}`; // e.g., 2
-                         // if 1, usually omitted before x, but kept if constant
+                         if (f.n !== 1) valStr = `${f.n}`;
                     } else {
                         valStr = `\\frac{${f.n}}{${f.d}}`;
                     }
-                    
                     return { sign, valStr, isOne: (f.n === 1 && f.d === 1) };
                 };
-
                 let t1 = formatTerm(A, true);
                 let t2 = formatTerm(B, false);
                 let t3 = formatTerm(C, false);
-
                 let s = "";
-                // x^2 term
                 s += t1.sign + (t1.valStr === "" && t1.isOne ? "" : t1.valStr) + "x^2";
-                
-                // x term
-                if (B !== 0) {
-                     s += t2.sign + (t2.valStr === "" && t2.isOne ? "" : t2.valStr) + "x";
-                }
-                
-                // constant
+                if (B !== 0) s += t2.sign + (t2.valStr === "" && t2.isOne ? "" : t2.valStr) + "x";
                 if (C !== 0) {
-                    // For constant, we always need the value even if it's 1
                     let cStr = t3.valStr === "" ? "1" : t3.valStr;
                     s += t3.sign + cStr;
                 }
-                
                 return s + " = 0";
             };
 
-            // 1. Common Factor
             if (type === 'common') {
                 let r = randNonZero(-9, 9); let k = randNonZero(1, 5);
                 a = k; b = -k * r; c = 0;
                 ansData = { type: 'rational', v1n: 0, v1d: 1, v2n: r, v2d: 1, isEqual: false };
                 qStr = formatQuadratic(a, b, c);
-            } 
-            // 2. Difference of Squares
-            else if (type === 'diff_sq') {
+            } else if (type === 'diff_sq') {
                 let m = randNonZero(1, 5); let n = randNonZero(1, 9);
                 let comm = gcd(m*m, n*n); a = (m*m)/comm; b = 0; c = -(n*n)/comm;
                 let f = simplifyFrac(n, m);
                 ansData = { type: 'rational', v1n: f.n, v1d: f.d, v2n: -f.n, v2d: f.d, isEqual: false };
                 qStr = formatQuadratic(a, b, c);
-            } 
-            // 3. Perfect Square
-            else if (type === 'perfect') {
+            } else if (type === 'perfect') {
                 let m = randInt(1, 3); let n = randNonZero(-9, 9);
                 a = m*m; b = 2*m*n; c = n*n;
                 let f = simplifyFrac(-n, m);
                 ansData = { type: 'rational', v1n: f.n, v1d: f.d, v2n: f.n, v2d: f.d, isEqual: true };
                 qStr = formatQuadratic(a, b, c);
-            } 
-            // 4. Standard Cross
-            else if (type === 'standard') {
+            } else if (type === 'standard') {
                 let m = randInt(1, 3); let n = randInt(1, 4);
                 let p = randNonZero(-9, 9); let q = randNonZero(-9, 9);
                 a = m*n; b = m*q + n*p; c = p*q; if (c === 0) c = 1;
@@ -253,60 +220,25 @@
                 let isEqual = (f1.n === f2.n && f1.d === f2.d);
                 ansData = { type: 'rational', v1n: f1.n, v1d: f1.d, v2n: f2.n, v2d: f2.d, isEqual };
                 qStr = formatQuadratic(a, b, c);
-            }
-            // 5. Expand & Arrange (New)
-            else if (type === 'expand') {
-                // Goal: (x+m)(x+n) = k
-                // 1. Decide target roots r1, r2 (integers)
-                let r1 = randNonZero(-8, 8);
-                let r2 = randNonZero(-8, 8);
-                // Target: x^2 - (r1+r2)x + r1r2 = 0
-                let S = r1 + r2; // Sum
-                let P = r1 * r2; // Prod
-                
-                // We want form (x+m)(x+n) = k
-                // Expand: x^2 + (m+n)x + mn = k
-                // Compare: m+n = -S, mn - k = P
-                
-                // 2. Pick random m
-                let m = randInt(-9, 9);
-                // 3. Solve for n
-                let n = -S - m;
-                // 4. Solve for k
-                let k = m * n - P;
-
-                // If k=0, it's just standard factoring, force k!=0
-                while (k === 0) {
-                    m = randInt(-9, 9);
-                    n = -S - m;
-                    k = m * n - P;
-                }
-
-                // Construct problem string
+            } else if (type === 'expand') {
+                let r1 = randNonZero(-8, 8); let r2 = randNonZero(-8, 8);
+                let S = r1 + r2; let P = r1 * r2; 
+                let m = randInt(-9, 9); let n = -S - m; let k = m * n - P;
+                while (k === 0) { m = randInt(-9, 9); n = -S - m; k = m * n - P; }
                 let part1 = m === 0 ? "x" : `(x ${m > 0 ? "+" : ""} ${m})`;
                 let part2 = n === 0 ? "x" : `(x ${n > 0 ? "+" : ""} ${n})`;
                 qStr = `${part1}${part2} = ${k}`;
-
-                // Answers are r1, r2
                 ansData = { type: 'rational', v1n: r1, v1d: 1, v2n: r2, v2d: 1, isEqual: r1 === r2 };
-            }
-            // 6. Fractional Coeffs (New)
-            else if (type === 'fraction') {
-                // Start with standard integer problem
+            } else if (type === 'fraction') {
                 let m = randInt(1, 2); let n = randInt(1, 3);
                 let p = randNonZero(-6, 6); let q = randNonZero(-6, 6);
                 a = m*n; b = m*q + n*p; c = p*q;
-                
-                // Pick a denominator k
                 let k = [2, 3, 4, 5][randInt(0, 3)];
-                
                 qStr = formatFractionEq(a, b, c, k);
-                
                 let f1 = simplifyFrac(-p, m); let f2 = simplifyFrac(-q, n);
                 let isEqual = (f1.n === f2.n && f1.d === f2.d);
                 ansData = { type: 'rational', v1n: f1.n, v1d: f1.d, v2n: f2.n, v2d: f2.d, isEqual };
             }
-            
             return { q: qStr, a: buildRootsString(ansData.type, ansData), method: '因式分解' };
         };
 
@@ -390,7 +322,6 @@
                 let sqrtD = Math.sqrt(D);
                 let sqrtInt = Math.round(sqrtD);
                 let isPerfectSq = (sqrtInt * sqrtInt === D);
-
                 if (isPerfectSq) {
                     let num1 = -b + sqrtInt; let num2 = -b - sqrtInt; let den = 2*a;
                     let f1 = simplifyFrac(num1, den); let f2 = simplifyFrac(num2, den);
@@ -412,12 +343,9 @@
             const [viewMode, setViewMode] = useState('list'); // 'list' or 'tv'
             
             const [subTypes, setSubTypes] = useState({
-                // Factor
                 factor_common: true, factor_diff: true, factor_perfect: true, factor_cross: true,
-                factor_expand: false, factor_fraction: false, // New types
-                // Square
+                factor_expand: false, factor_fraction: false,
                 sq_basic: true, sq_coeff: false, sq_gen_1: true, sq_gen_a: false,
-                // Formula
                 form_distinct: true, form_equal: false, form_none: false
             });
 
@@ -429,8 +357,8 @@
                     if(subTypes.factor_diff) t.push('diff_sq');
                     if(subTypes.factor_perfect) t.push('perfect'); 
                     if(subTypes.factor_cross) t.push('standard');
-                    if(subTypes.factor_expand) t.push('expand'); // New
-                    if(subTypes.factor_fraction) t.push('fraction'); // New
+                    if(subTypes.factor_expand) t.push('expand');
+                    if(subTypes.factor_fraction) t.push('fraction');
                     if(t.length) activeGens.push(() => generateFactorProblem(t));
                 }
                 if(mode==='square' || mode==='mixed'){
@@ -464,7 +392,7 @@
                     {viewMode !== 'tv' && (
                         <div className="max-w-5xl mx-auto mb-4">
                             <header className="mb-6 text-center">
-                                <h1 className="text-4xl font-bold text-gray-800 mb-2">一元二次方程式 練習生成器</h1>
+                                <h1 className="text-3xl font-bold text-gray-800 mb-2">一元二次方程式 練習生成器</h1>
                                 <div className="flex justify-center gap-2">
                                     {['factor','square','formula','mixed'].map(m => (
                                         <button key={m} onClick={()=>setMode(m)} 
@@ -519,7 +447,7 @@
 
                     {/* Problem Display Area */}
                     <div className={viewMode === 'tv' ? 'mx-auto max-w-7xl' : 'max-w-5xl mx-auto'}>
-                         {/* Tools Bar - Integrated Controls (Now includes generation tools) */}
+                         {/* Tools Bar */}
                          <div className={`flex flex-wrap gap-4 justify-between items-center mb-4 ${viewMode==='tv'?'text-white':''}`}>
                             <div className="flex items-center gap-4">
                                 <h3 className="text-xl font-bold opacity-80 flex items-center gap-3">
@@ -527,7 +455,6 @@
                                     {problems.length > 0 && <span className={`text-sm font-normal px-2 py-0.5 rounded ${viewMode==='tv'?'bg-gray-700':'bg-gray-200 text-gray-600'}`}>共 {problems.length} 題</span>}
                                 </h3>
                                 
-                                {/* Edit Mode Generation Controls (Always visible in List Mode) */}
                                 {viewMode === 'list' && (
                                     <div className="flex items-center gap-2">
                                         <select value={numQuestions} onChange={(e)=>setNumQuestions(Number(e.target.value))} className="border p-1.5 rounded text-sm text-gray-700">
@@ -560,36 +487,32 @@
 
                         {/* Grid / List Layout */}
                         {problems.length > 0 ? (
-                            <div className={`grid gap-4 ${
-                                viewMode === 'tv' 
-                                ? 'grid-cols-2' // TV Mode: Strictly 2 columns as requested
-                                : 'grid-cols-1' // List Mode: 1 column
-                            }`}>
+                            <div className="grid gap-4 grid-cols-2">
                                 {problems.map((p, idx) => (
                                     <div key={p.id} className={`relative rounded-xl border-l-8 transition-all ${
                                         viewMode === 'tv' 
-                                        ? 'bg-gray-800 border-yellow-500 px-3 py-0.5 shadow-xl' // Reduced vertical padding
-                                        : 'bg-white border-blue-500 p-4 shadow-sm'
+                                        ? 'bg-gray-800 border-yellow-500 px-4 py-1 shadow-xl' 
+                                        : 'bg-white border-blue-500 px-4 py-1 shadow-sm'
                                     }`}>
-                                        <div className="flex justify-between items-start">
-                                            <span className={`text-sm font-mono px-2 py-1 rounded inline-block ${viewMode==='tv'?'bg-gray-700 text-gray-300':'bg-gray-100 text-gray-500'}`}>
+                                        <div className="flex justify-between items-start mt-0">
+                                            <span className={`text-sm font-mono px-2 py-0.5 rounded inline-block ${viewMode==='tv'?'bg-gray-700 text-gray-300':'bg-gray-100 text-gray-500'}`}>
                                                 Q{idx + 1}
                                             </span>
                                             {viewMode !== 'tv' && <span className="text-xs text-gray-400">{p.method}</span>}
                                         </div>
 
-                                        {/* Question - Size adjusted for TV mode */}
-                                        <div className={`text-center font-serif ${viewMode==='tv'?'my-0':'my-2'}`}>
+                                        {/* Question */}
+                                        <div className={`text-center font-serif ${viewMode==='tv'?'my-0':'my-0'}`}>
                                             <MathDisplay 
                                                 latex={p.q} 
-                                                className={viewMode==='tv' ? 'text-4xl text-white' : 'text-2xl text-gray-900'} 
+                                                className={viewMode==='tv' ? 'text-3xl text-white' : 'text-3xl text-gray-900'} 
                                             />
                                         </div>
 
-                                        {/* Answer Area - Collapsible in TV Mode */}
+                                        {/* Answer Area */}
                                         {(!showAnswers && viewMode === 'tv') ? null : (
-                                            <div className={`mt-2 pt-2 border-t flex items-center justify-center
-                                                ${viewMode === 'tv' ? 'border-gray-700 min-h-[1.5rem]' : 'border-gray-100 min-h-[3rem] mt-4 pt-3'}
+                                            <div className={`border-t flex items-center justify-center
+                                                ${viewMode === 'tv' ? 'border-gray-700 min-h-[1.5rem] mt-1' : 'border-gray-100 min-h-[2rem] mt-2'}
                                             `}>
                                                 {showAnswers ? (
                                                     <div className={`animate-bounce-in font-bold ${viewMode==='tv'?'text-yellow-400':'text-red-600'}`}>
@@ -599,7 +522,7 @@
                                                         />
                                                     </div>
                                                 ) : (
-                                                    <span className="text-gray-400 italic text-sm">...</span>
+                                                    <span className="text-gray-400 italic text-sm scale-75 block">...</span>
                                                 )}
                                             </div>
                                         )}
@@ -607,7 +530,7 @@
                                 ))}
                             </div>
                         ) : (
-                            /* Empty State - Guides user to generate */
+                            /* Empty State */
                             <div className="text-center py-12 border-2 border-dashed border-gray-300 rounded-xl">
                                 <p className="text-gray-500 text-lg">👇 設定好題型後，點擊上方「生成」按鈕開始練習</p>
                             </div>
